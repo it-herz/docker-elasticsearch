@@ -58,13 +58,28 @@ export NODE_NAME=${NODE_NAME}
 rm -rf /elasticsearch/modules/x-pack/x-pack-ml
 rm -rf /elasticsearch/modules/x-pack-ml
 
+declare -a es_opts
+
+while IFS='=' read -r envvar_key envvar_value
+do
+  # Elasticsearch settings need to have at least two dot separated lowercase
+  # words, e.g. `cluster.name`, except for `processors` which we handle
+  # specially
+  if [[ "$envvar_key" =~ ^[a-z0-9_]+\.[a-z0-9_]+ || "$envvar_key" =~ ^[a-z0-9_]+\.[a-z0-9_]+\.[a-z0-9_]+ || "$envvar_key" == "processors" ]]; then
+    if [[ ! -z $envvar_value ]]; then
+      es_opt="-E${envvar_key}=${envvar_value}"
+      es_opts+=("${es_opt}")
+    fi
+  fi
+done < <(env)
+
 # Run
 if [[ $(whoami) == "root" ]]; then
     if [ ! -d "/data/data/nodes/0" ]; then
         echo "Changing ownership of /data folder"
         chown -R elasticsearch:elasticsearch /data
     fi
-    exec su-exec elasticsearch $BASE/bin/elasticsearch $ES_EXTRA_ARGS
+    exec su-exec elasticsearch $BASE/bin/elasticsearch $ES_EXTRA_ARGS ${es_opts}
 else
     # The container's first process is not running as 'root', 
     # it does not have the rights to chown. However, we may
@@ -72,5 +87,5 @@ else
     # the volumes already have the right permissions. This is
     # the case for Kubernetes, for example, when 'runAsUser: 1000'
     # and 'fsGroup:100' are defined in the pod's security context.
-    "${BASE}"/bin/elasticsearch ${ES_EXTRA_ARGS}
+    "${BASE}"/bin/elasticsearch ${ES_EXTRA_ARGS} ${es_opts}
 fi
